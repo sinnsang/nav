@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>AR 주차장 길안내</title>
+  <style>
+    body, html {
+      margin: 0;
+      overflow: hidden;
+      background: black;
+    }
+    video {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      object-fit: cover;
+      z-index: 1;
+    }
+    #arrow {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      width: 100px;
+      height: 100px;
+      margin-left: -50px;
+      margin-top: -50px;
+      z-index: 2;
+      transition: transform 0.1s linear;
+    }
+  </style>
+</head>
+<body>
+
+<video id="camera" autoplay muted playsinline></video>
+<img id="arrow" src="https://upload.wikimedia.org/wikipedia/commons/thumb/3/37/Arrow_east.svg/1200px-Arrow_east.svg.png" alt="arrow">
+
+<script>
+  // 목적지 설정 (예: 주차장 입구 GPS 좌표)
+  const destination = {
+    lat: 37.5665,  // 예: 서울 시청 근처
+    lng: 126.9780
+  };
+
+  let currentPosition = null;
+  let deviceHeading = 0; // 기기의 나침반 방향
+
+  // 카메라 시작
+  async function startCamera() {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+    document.getElementById("camera").srcObject = stream;
+  }
+
+  // 현재 위치 추적
+  function trackLocation() {
+    navigator.geolocation.watchPosition(pos => {
+      currentPosition = {
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude
+      };
+    }, err => {
+      console.error("GPS 오류", err);
+    }, {
+      enableHighAccuracy: true,
+      maximumAge: 0,
+      timeout: 5000
+    });
+  }
+
+  // 방향 계산
+  function computeBearing(startLat, startLng, destLat, destLng) {
+    const toRad = deg => deg * Math.PI / 180;
+    const toDeg = rad => rad * 180 / Math.PI;
+    const y = Math.sin(toRad(destLng - startLng)) * Math.cos(toRad(destLat));
+    const x = Math.cos(toRad(startLat)) * Math.sin(toRad(destLat)) -
+              Math.sin(toRad(startLat)) * Math.cos(toRad(destLat)) * Math.cos(toRad(destLng - startLng));
+    const brng = Math.atan2(y, x);
+    return (toDeg(brng) + 360) % 360;
+  }
+
+  // 나침반 방향 수신
+  function setupOrientationListener() {
+    window.addEventListener('deviceorientationabsolute', (event) => {
+      if (event.absolute && event.alpha !== null) {
+        deviceHeading = event.alpha;
+      }
+    });
+
+    // fallback for iOS
+    window.addEventListener('deviceorientation', (event) => {
+      if (event.webkitCompassHeading) {
+        deviceHeading = event.webkitCompassHeading;
+      } else if (event.alpha !== null) {
+        deviceHeading = 360 - event.alpha;
+      }
+    });
+  }
+
+  // 주기적으로 방향 업데이트
+  function updateArrow() {
+    if (currentPosition) {
+      const bearing = computeBearing(
+        currentPosition.lat, currentPosition.lng,
+        destination.lat, destination.lng
+      );
+
+      const rotation = bearing - deviceHeading;
+      document.getElementById("arrow").style.transform = `rotate(${rotation}deg)`;
+    }
+    requestAnimationFrame(updateArrow);
+  }
+
+  // 초기 실행
+  async function init() {
+    await startCamera();
+    setupOrientationListener();
+    trackLocation();
+    updateArrow();
+  }
+
+  // 사용자 인터랙션 후 시작 (iOS 요구사항 대응)
+  window.addEventListener('click', () => {
+    init();
+  });
+</script>
+
+</body>
+</html>
